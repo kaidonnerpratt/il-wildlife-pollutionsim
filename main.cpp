@@ -363,7 +363,7 @@ class Creature : public sf::Drawable {
 
 
         bool iseating = false;
-        double hunger = 1;
+        double hunger = (double)random()/(double)RAND_MAX;
 
 
         double x;                                               //x positon
@@ -734,10 +734,11 @@ int main(){
 
     
     const int GRAPH_MAX = 100;
-    int datagraph[GRAPH_MAX];
-    
+    int preygraph[GRAPH_MAX];
+    int predgraph[GRAPH_MAX];
     for (int i = 0; i < GRAPH_MAX; i++){
-        datagraph[i]= -1;
+        preygraph[i]= -1;
+        predgraph[i]= -1;
     }
     
     for(int y = 0; y < lheight; y++){
@@ -765,7 +766,7 @@ int main(){
                         (
                             lakes_img, 
                             lake_col, 
-                            CREATURE_START/5
+                            CREATURE_START/2
                         );
     // for (int i = 0; i < CREATURE_MAX; i++){
         
@@ -910,14 +911,26 @@ int main(){
             }
             datawd.clear();
             for (int i = 0; i < GRAPH_MAX-1; i++){
-                datagraph[i] = datagraph[i+1];
-                std::array line = {
-                    sf::Vertex{sf::Vector2f(((double)(i-1)/(double)GRAPH_MAX)*500.f, 500.f-500.f*((double)datagraph[i-1]/(double)CREATURE_MAX))},
-                    sf::Vertex{sf::Vector2f(((double)i/(double)GRAPH_MAX)*500.f, 500.f-500.f*((double)datagraph[i]/(double)CREATURE_MAX))}
+                preygraph[i]= preygraph[i+1];
+                predgraph[i]= predgraph[i+1];
+                std::array preyline = {
+                    sf::Vertex{sf::Vector2f(((double)(i-1)/(double)GRAPH_MAX)*500.f, 500.f-500.f*((double)preygraph[i-1]/(double)CREATURE_MAX))},
+                    sf::Vertex{sf::Vector2f(((double)i/(double)GRAPH_MAX)*500.f, 500.f-500.f*((double)preygraph[i]/(double)CREATURE_MAX))}
                 };
-                datawd.draw(line.data(), line.size(), sf::PrimitiveType::Lines);
+                preyline[0].color = sf::Color::Green;
+                preyline[1].color = sf::Color::Green;
+                std::array predline = {
+                    sf::Vertex{sf::Vector2f(((double)(i-1)/(double)GRAPH_MAX)*500.f, 500.f-500.f*((double)predgraph[i-1]/(double)CREATURE_MAX))},
+                    sf::Vertex{sf::Vector2f(((double)i/(double)GRAPH_MAX)*500.f, 500.f-500.f*((double)predgraph[i]/(double)CREATURE_MAX))}
+                };
+                predline[0].color = sf::Color::Red;
+                predline[1].color = sf::Color::Red;
+                datawd.draw(preyline.data(), preyline.size(), sf::PrimitiveType::Lines);
+                datawd.draw(predline.data(), predline.size(), sf::PrimitiveType::Lines);
+
             }
-            datagraph[GRAPH_MAX-1] = preys.pop;
+            preygraph[GRAPH_MAX-1] = preys.pop;
+            predgraph[GRAPH_MAX-1] = preds.pop;
             datawd.display();
             
             
@@ -925,7 +938,7 @@ int main(){
         
         sf::Font font;
         font.loadFromFile("NotoNaskhArabic-Regular.ttf");
-        sf::Text fpscount = sf::Text("population: "+std::to_string(preys.pop), font, 15);
+        sf::Text fpscount = sf::Text("population: "+std::to_string(preys.pop+preds.pop), font, 15);
         fpscount.setPosition({0,0});
         window.draw(fpscount);
 
