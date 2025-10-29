@@ -90,6 +90,36 @@ class refGrid{
         
         curgrid[(int)floor(s.y/tilesize)][(int)floor(s.x/tilesize)].push_back(s.toPoint());
     }
+    std::vector<point<double>> getNearSingle(int tx,int ty){
+        std::vector<point<double>> ret;
+        if (tx < 0){
+            return ret;
+        }
+        if (ty < 0){
+            return ret;
+        }
+        if (tx >= tilecount){
+            return ret;
+        }
+        if (ty >= tilecount){
+            return ret;
+        }
+
+        return curgrid[ty][tx];
+    }
+    std::vector<point<double>> getNear(point<double> s){
+        std::vector<point<double>> ret;
+
+        for (int y = -1; y < 2; y++){
+            for (int x = -1; x < 2; x++){
+                std::vector<point<double>> a = getNearSingle(s.x+x,s.y+y);
+                ret.insert(ret.end(), a.begin(), a.end());
+            }
+        }
+
+
+        return ret;
+    }
     point<double> getNearestSingle(point<double> s, int tx, int ty){
         if (tx < 0){
             return point<double>(-1,-1,-1);
@@ -235,7 +265,7 @@ class CreatureOrganizer : public sf::Drawable {
 
             if(!current.isnull){
                 pop+=1;
-                current.tick(lakes_img,lake_col,grassArray,std::ref(spotsNeeded), oppsort);
+                current.tick(lakes_img,lake_col,grassArray,std::ref(spotsNeeded), oppsort,gridsort);
                 CreatureList[i] = current;
             }
         }
@@ -266,6 +296,15 @@ class CreatureOrganizer : public sf::Drawable {
                 gridsort.sort<ct>(CreatureList[i]);
                 if (CreatureList[i].cankill && CreatureList[i].wannakill != -1){
                     preytokill.push_back(CreatureList[i].wannakill);
+                }
+
+                if (CreatureList[i].cansharefood){
+                    for (int ci = 0; ci<CreatureList[i].shareWith.size();ci++){
+                        if(CreatureList[i].foodtoshare > 0){
+                            CreatureList[CreatureList[i].shareWith[ci].id].hunger+=0.1;
+                            CreatureList[i].foodtoshare-=0.1;
+                        }
+                    }
                 }
             }else{
                 freeSpots.push_back(i);
@@ -312,6 +351,9 @@ class CreatureOrganizer : public sf::Drawable {
 
 class Creature : public sf::Drawable {       
     public:
+        bool cansharefood=false;
+        int foodtoshare=0;
+        std::vector<point<double>> shareWith;
         bool cankill=false;
         bool wannakill=-1;
         int id = 0;
@@ -348,7 +390,8 @@ class Creature : public sf::Drawable {
             isnull = c;
             id=i;
         }
-    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded, refGrid<gdst,lwidth> oppsort){
+    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded, refGrid<gdst,lwidth> oppsort, 
+            refGrid<gdst,lwidth> thissort){
 
     }
     void eat(refGrid<gdst,lwidth> oppsort){
@@ -398,7 +441,8 @@ class PreyBasic : public Creature{
             isnull = c;
             id=i;
         }
-    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded, refGrid<gdst,lwidth> oppsort){
+    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded, refGrid<gdst,lwidth> oppsort, 
+            refGrid<gdst,lwidth> thissort){
         if (!isnull){
             walk(lakes_img, lake_col, oppsort);
             if (hunger <= 0){
@@ -409,7 +453,7 @@ class PreyBasic : public Creature{
                 isnull = true;
                 return;
             }else if (age > 0.3){
-                matetimer -= 0.005 + (0.002*((double)random()/(double)RAND_MAX));
+                matetimer -= 0.01 + (0.002*((double)random()/(double)RAND_MAX));
             }
 
             age+=0.004*(1-hunger)*((double)random()/(double)RAND_MAX);
@@ -452,15 +496,21 @@ class PreyBasic : public Creature{
          
   
         if (!isnull){ // check that is exists
-            
-
+    
             //rotate random amount, in radions, "then walk" in that direction
             double temp_rand = (double)random()/(double)RAND_MAX;
             r = (2 * M_PI * temp_rand);
 
+            point<double> nearopp = oppsort.getNearestAround(toPoint());
+            if (nearopp.id != -1){
+                if (nearopp.distance(toPoint()) <= 20){
+                    r = -nearopp.direction(toPoint());
+                }   
+            }
+
             double movex = cos(r);
             double movey = sin(r);
-
+            
             x+=movex;
             y+=movey;
             
@@ -510,6 +560,9 @@ class PredBasic : public Creature{
     public:
         bool cankill=true;
         int wannakill=-1;
+        bool cansharefood=true;
+        int foodtoshare=0;
+        std::vector<point<double>> shareWith;
         PredBasic(){
             
         }
@@ -527,7 +580,10 @@ class PredBasic : public Creature{
             isnull = c;
             id=i;
         }
-    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded, refGrid<gdst,lwidth> oppsort){
+    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded, refGrid<gdst,lwidth> oppsort, 
+            refGrid<gdst,lwidth> thissort){
+        shareWith = std::vector<point<double>>();
+        int foodtoshare=0;
         wannakill=-1;
         if (!isnull){
             walk(lakes_img, lake_col, oppsort);
@@ -539,25 +595,27 @@ class PredBasic : public Creature{
                 isnull = true;
                 return;
             }else if (age > 0.3){
-                matetimer -= 0.006 + (0.002*((double)random()/(double)RAND_MAX));
+                matetimer -= 0.005 + (0.002*((double)random()/(double)RAND_MAX));
             }
 
             age+=0.004*(1-hunger)*((double)random()/(double)RAND_MAX);
-            hunger -= 0.01;
+            hunger -= 0.004;
+            foodtoshare-=0.2;
             eat(oppsort);
             reproduce(spotsNeeded, lakes_img, lake_col);
-        
+            shareWith = thissort.getNear(toPoint());
         }
         
     }
     void eat(refGrid<gdst,lwidth> oppsort){
-        if (hunger <= 0.3 || iseating){
+        if (hunger <= 0.4 || iseating){
             iseating=true;
             point<double> nearopp = oppsort.getNearestAround(toPoint());
 
             if(nearopp.distance(toPoint()) < 1.2){
+                foodtoshare=1;
                 if (hunger+0.2 <= 1){
-                    hunger += 0.8;
+                    hunger += 0.5;
                 }else{
                     hunger = 1;
                 }
@@ -573,10 +631,8 @@ class PredBasic : public Creature{
         if (matetimer <= 0 && !isnull && !iseating && hunger >= 0.5){
             
             matetimer=1;
-            
-            spotsNeeded.push_back(id);
 
-            
+            spotsNeeded.push_back(id);            
         }
     }
     void walk(sf::Image lakes_img, sf::Color lake_col, refGrid<gdst,lwidth> oppsort){  
@@ -586,15 +642,17 @@ class PredBasic : public Creature{
             double temp_rand = (double)random()/(double)RAND_MAX;
             r = (2 * M_PI * temp_rand);
 
+            double movex = cos(r);
+            double movey = sin(r);
             if (iseating){
                 point<double> nearopp = oppsort.getNearestAround(toPoint());
                 if (nearopp.id != -1){
                     r = nearopp.direction(toPoint());
+                    movex = cos(r)*1.2;
+                    movey = sin(r)*1.2;
                 }
             }   
 
-            double movex = cos(r);
-            double movey = sin(r);
             
             x+=movex;
             y+=movey;
@@ -648,10 +706,12 @@ int main(){
     sf::Sprite grass_spr;
 
 
+
+
     sf::RenderWindow window(sf::VideoMode(500, 500), "program");
     sf::RenderWindow datawd(sf::VideoMode(500, 500), "data");
-    sf::CircleShape shape(100.f);
 
+    sf::CircleShape shape(100.f);
     sf::Image lakes_img;
     sf::Image grass_img;
     
@@ -705,7 +765,7 @@ int main(){
                         (
                             lakes_img, 
                             lake_col, 
-                            CREATURE_START/2
+                            CREATURE_START/5
                         );
     // for (int i = 0; i < CREATURE_MAX; i++){
         
@@ -869,7 +929,6 @@ int main(){
         fpscount.setPosition({0,0});
         window.draw(fpscount);
 
-        
         window.display();
         clock_t endFrame = clock();
         deltaTime += endFrame - beginFrame;
