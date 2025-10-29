@@ -14,17 +14,19 @@
 
 using namespace std::placeholders;
 
-const int CREATURE_MAX = 10000;
+const int CREATURE_MAX = 2000;
 const int CREATURE_START = 1000;
 
 const int lwidth = 500;
 const int lheight = 500;
 
+const int gdst = 50;
+
 
 double grassArray[lwidth*lheight];
 
 
-
+std::vector<int> preytokill;
 
 template<typename T>
 std::vector<T> flatten(const std::vector<std::vector<T>> &orig){   
@@ -41,59 +43,155 @@ double clockToMilliseconds(clock_t ticks){
     return (ticks/(double)CLOCKS_PER_SEC)*1000.0;
 }
 
-
-
-template <typename T>
-class queue {
-private:
-    std::queue<T> m_queue;
-    std::mutex m_mutex;
-    std::condition_variable m_cond;
-public:
-    void push(T item){
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_queue.push(item);
-        m_cond.notify_one();
-    }
-    T pop(){
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_cond.wait(lock,[this]() { return !m_queue.empty();});
-        T item = m_queue.front();
-        m_queue.pop();
-        return item;
-    }
-    bool empty(){
-        
-        return m_queue.empty();
-    }
-};
-
-
-template <class gst, int tilesize, int gridsize>
-class refGrid{
+template<typename T>
+class point{
     public:
-        static const int tilecount = gridsize/tilesize;
-        std::vector<gst> curgrid[tilecount][tilecount];
-        refGrid(){}
-    void reset(){
-        for (int y = 0; y < tilecount; y++){
-            for (int x = 0; x < tilecount; x++){
-                curgrid[y][x] = std::vector<gst>();
-            }
+        T x;
+        T y;
+        int id = 0;
+        point(T xx, T yy){
+            x=xx;
+            y=yy;
         }
+        point(T xx, T yy, int i){
+            x=xx;
+            y=yy;
+            id=i;
+        }
+    T distance(point<T> s){
+        return (T) hypot((x-s.x),(y-s.y));
     }
-    void sort(gst &s){
-        
-        curgrid[(int)floor((int)s.y/tilesize)][(int)floor((int)s.x/tilesize)].push_back(s);
+    double direction(point<T> s){
+        return atan2((y-s.y),(x-s.x));
+    }
+    friend std::ostream& operator<<(std::ostream& os, const point& m) {
+        os << "("<<std::to_string(m.x)<<","<<std::to_string(m.y)<<")";
+        return os; // enable chaining
     }
     
 };
 
+
+template <int tilesize, int gridsize>
+class refGrid{
+    public:
+        static const int tilecount = gridsize/tilesize;
+        std::vector<point<double>> curgrid[tilecount][tilecount];
+        refGrid(){}
+    void reset(){
+        for (int y = 0; y < tilecount; y++){
+            for (int x = 0; x < tilecount; x++){
+                curgrid[y][x] = std::vector<point<double>>();
+            }
+        }
+    }
+    template<class gst>
+    void sort(gst &s){
+        
+        curgrid[(int)floor(s.y/tilesize)][(int)floor(s.x/tilesize)].push_back(s.toPoint());
+    }
+    point<double> getNearestSingle(point<double> s, int tx, int ty){
+        if (tx < 0){
+            return point<double>(-1,-1,-1);
+        }
+        if (ty < 0){
+            return point<double>(-1,-1,-1);
+        }
+        if (tx >= tilecount){
+            return point<double>(-1,-1,-1);
+        }
+        if (ty >= tilecount){
+            return point<double>(-1,-1,-1);
+        }
+
+        std::vector<point<double>> current = curgrid[ty][tx];
+
+        point<double> closest = point<double>(-1,-1,-1);
+        double closestDist = -1;
+
+        for (int i = 0; i < current.size(); i++){
+            if (current[i].distance(s) < closestDist || closestDist == -1){
+                closest = current[i];
+                closestDist = current[i].distance(s);
+            }
+        }
+        return closest;
+
+
+
+    }
+    point<double> getNearestAround(point<double> s){
+        int tx = (int)floor(s.x/tilesize);
+        int ty = (int)floor(s.y/tilesize);
+
+        point<double> centclosest = getNearestSingle(s, tx, ty);
+        if (centclosest.id != -1){
+            return centclosest;
+        }else{
+            
+            point<double> ac = getNearestSingle(s, tx+1, ty);
+            point<double> bc = getNearestSingle(s, tx+1, ty+1);
+            point<double> cc = getNearestSingle(s, tx, ty+1);
+            point<double> dc = getNearestSingle(s, tx-1, ty+1);
+            point<double> ec = getNearestSingle(s, tx-1, ty);
+            point<double> fc = getNearestSingle(s, tx-1, ty-1);
+            point<double> gc = getNearestSingle(s, tx, ty-1);
+            point<double> hc = getNearestSingle(s, tx+1, ty-1);
+
+
+
+            point<double> closest = point<double>(-1,-1,-1);
+            double closestDist = -1;
+            if (ac.id != -1 && (ac.distance(s) < closestDist || closestDist == -1)){
+                closest = ac;
+                closestDist = ac.distance(s);
+            }
+            if (bc.id != -1 && (bc.distance(s) < closestDist || closestDist == -1)){
+                closest = bc;
+                closestDist = bc.distance(s);
+            }
+            if (cc.id != -1 && (cc.distance(s) < closestDist || closestDist == -1)){
+                closest = cc;
+                closestDist = cc.distance(s);
+            }
+            if (dc.id != -1 && (dc.distance(s) < closestDist || closestDist == -1)){
+                closest = dc;
+                closestDist = dc.distance(s);
+            }
+            if (ec.id != -1 && (ec.distance(s) < closestDist || closestDist == -1)){
+                closest = ec;
+                closestDist = ec.distance(s);
+            }
+            if (fc.id != -1 && (fc.distance(s) < closestDist || closestDist == -1)){
+                closest = fc;
+                closestDist = fc.distance(s);
+            }
+            if (gc.id != -1 && (gc.distance(s) < closestDist || closestDist == -1)){
+                closest = gc;
+                closestDist = gc.distance(s);
+            }
+            if (hc.id != -1 && (hc.distance(s) < closestDist || closestDist == -1)){
+                closest = hc;
+                closestDist = hc.distance(s);
+            }
+            return closest;
+
+        }
+
+    }
+    
+};
+
+
+
+
+
+
 template<class ct, int CREATURE_MAX>
 class CreatureOrganizer : public sf::Drawable {
     public:
-
-        refGrid<ct, 25, lwidth> gridsort = refGrid<ct, 25, lwidth>();
+        
+        refGrid<gdst, lwidth> gridsort = refGrid<gdst, lwidth>();
         sf::Image lakes_img;
         sf::Color lake_col;
         std::vector<int> spotsNeeded;
@@ -120,59 +218,40 @@ class CreatureOrganizer : public sf::Drawable {
     ct& operator[] (size_t i){
         return CreatureList[i];
     }
-    void tickRange(int start, int end, std::vector<int> &frsp){
-        for (int i = start; i < CREATURE_MAX || i < end; i++){
+    void tickRange(int start, int end){
+        for (int i = start; i < CREATURE_MAX && i < end; i++){
             ct current = CreatureList[i];
 
             if(!current.isnull){
                 pop+=1;
                 current.tick(lakes_img,lake_col,grassArray,std::ref(spotsNeeded));
                 CreatureList[i] = current;
-            }else{
-                frsp.push_back(i);
-
             }
         }
     }
-    void tickQueue(queue<ct> &threadqueue){
-        bool n = true;
-        while (n){
-        
-            ct current = threadqueue.pop();
-         
-            int i = current.id;
+    void tickStep(int offset, int step, refGrid<gdst,lwidth> oppsort){
+        for (int i = offset; i < CREATURE_MAX; i+=step){
+            ct current = CreatureList[i];
+
             if(!current.isnull){
                 pop+=1;
-                current.tick(lakes_img,lake_col,grassArray,std::ref(spotsNeeded));
+                current.tick(lakes_img,lake_col,grassArray,std::ref(spotsNeeded), oppsort);
                 CreatureList[i] = current;
-            }else{
-                n=false;
             }
         }
-        // return;
     }
-    void tickThreaded(int threadcount){ 
-        
-        queue<ct> threadqueue = queue<ct>();
+    void tickThreaded(int threadcount, refGrid<gdst,lwidth> oppsort){ 
         
         freeSpots.clear();
         gridsort.reset();
-        for (int i = 0; i < CREATURE_MAX; i++){
-            if (!CreatureList[i].isnull){
-                threadqueue.push(CreatureList[i]);
-                gridsort.sort(CreatureList[i]);
-            }else{
-                freeSpots.push_back(i);
-            }
-        }
-        for (int i = 0; i < threadcount; i++){
-            threadqueue.push(ct(0,0,true,0));
-        }
+        
+        
+
         pop = 0;
         int step = ceil((double)CREATURE_MAX/(double)threadcount);
        
         for (int i = 0; i < threadcount; i++){
-            currentthreads.push_back(std::thread(std::bind(&CreatureOrganizer::tickQueue, this, std::ref(threadqueue))));
+            currentthreads.push_back(std::thread(std::bind(&CreatureOrganizer::tickStep, this, i, threadcount, oppsort)));
         }
         
         
@@ -182,10 +261,19 @@ class CreatureOrganizer : public sf::Drawable {
             }
         }
         
-        std::vector<int> fFreeSpots = freeSpots;
-        for (int i = 0;  !spotsNeeded.empty() && i < fFreeSpots.size(); i++){
+        for (int i = 0; i < CREATURE_MAX; i++){
+            if (!CreatureList[i].isnull){
+                gridsort.sort<ct>(CreatureList[i]);
+                if (CreatureList[i].cankill && CreatureList[i].wannakill != -1){
+                    preytokill.push_back(CreatureList[i].wannakill);
+                }
+            }else{
+                freeSpots.push_back(i);
+            }
+        }
+        for (int i = 0;  !spotsNeeded.empty() && i < freeSpots.size(); i++){
             ct tmpc = CreatureList[spotsNeeded.back()];
-            CreatureList[fFreeSpots[i]] = ct(tmpc.x, tmpc.y, false   , 0, fFreeSpots[i]);
+            CreatureList[freeSpots[i]] = ct(tmpc.x, tmpc.y, false, 0, freeSpots[i]);
             spotsNeeded.pop_back();
         }
         currentthreads.clear();
@@ -224,7 +312,8 @@ class CreatureOrganizer : public sf::Drawable {
 
 class Creature : public sf::Drawable {       
     public:
-        
+        bool cankill=false;
+        bool wannakill=-1;
         int id = 0;
 
         double matetimer = 1;
@@ -259,37 +348,21 @@ class Creature : public sf::Drawable {
             isnull = c;
             id=i;
         }
-    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded){
-        if (!isnull){
-            walk(lakes_img, lake_col);
-            if (hunger <= 0){
-                isnull = true;
-                return;
-            }
-            if (age > 1){
-                isnull = true;
-                return;
-            }else if (age > 0.3){
-                matetimer -= 0.005 + (0.002*((double)random()/(double)RAND_MAX));
-            }
+    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded, refGrid<gdst,lwidth> oppsort){
 
-            age+=0.004*((double)random()/(double)RAND_MAX);
-            hunger -= 0.01;
-            eat();
-            reproduce(spotsNeeded, lakes_img, lake_col);
-        
-        }
-        
     }
-    void eat(){
+    void eat(refGrid<gdst,lwidth> oppsort){
         std::cout<<"wrongfull parent class accsess"<<std::endl;
 
     }
     void reproduce(std::vector<int> &spotsNeeded, sf::Image lakes_img, sf::Color lake_col){
         std::cout<<"wrongfull parent class accsess"<<std::endl;
     }
-    void walk(sf::Image lakes_img, sf::Color lake_col) {  
+    void walk(sf::Image lakes_img, sf::Color lake_col, refGrid<gdst,lwidth> oppsort) {  
         std::cout<<"wrongfull parent class accsess"<<std::endl;
+    }
+    point<double> toPoint(){
+        return point<double>(x,y,id);
     }
     friend std::ostream& operator<<(std::ostream& os, const Creature& m) {
         os << "creature with id: " <<  std::to_string(m.id);
@@ -325,9 +398,9 @@ class PreyBasic : public Creature{
             isnull = c;
             id=i;
         }
-    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded){
+    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded, refGrid<gdst,lwidth> oppsort){
         if (!isnull){
-            walk(lakes_img, lake_col);
+            walk(lakes_img, lake_col, oppsort);
             if (hunger <= 0){
                 isnull = true;
                 return;
@@ -339,15 +412,15 @@ class PreyBasic : public Creature{
                 matetimer -= 0.005 + (0.002*((double)random()/(double)RAND_MAX));
             }
 
-            age+=0.004*((double)random()/(double)RAND_MAX);
+            age+=0.004*(1-hunger)*((double)random()/(double)RAND_MAX);
             hunger -= 0.01;
-            eat();
+            eat(oppsort);
             reproduce(spotsNeeded, lakes_img, lake_col);
         
         }
         
     }
-    void eat(){
+    void eat(refGrid<gdst,lwidth> oppsort){
         if (hunger <= 0.3 || iseating){
             iseating = true;
             if (hunger >= 0.9){
@@ -375,19 +448,21 @@ class PreyBasic : public Creature{
             
         }
     }
-    void walk(sf::Image lakes_img, sf::Color lake_col){
+    void walk(sf::Image lakes_img, sf::Color lake_col, refGrid<gdst,lwidth> oppsort){
          
   
         if (!isnull){ // check that is exists
+            
 
             //rotate random amount, in radions, "then walk" in that direction
             double temp_rand = (double)random()/(double)RAND_MAX;
             r = (2 * M_PI * temp_rand);
 
+            double movex = cos(r);
+            double movey = sin(r);
 
-
-            x+=cos(r);
-            y+=sin(r);
+            x+=movex;
+            y+=movey;
             
             if (x < 0){
                 x = 0;
@@ -404,15 +479,15 @@ class PreyBasic : public Creature{
             
             if (lakes_img.getPixel(floor(x),floor(y))==lake_col){
                 
-                if (lakes_img.getPixel(floor(x),floor(y-sin(r)*0.8))!=lake_col){
-                    y-=sin(r)*0.5;
+                if (lakes_img.getPixel(floor(x),floor(y-movey*0.8))!=lake_col){
+                    y-=movey*0.5;
                 }else 
-                if (lakes_img.getPixel(floor(x-cos(r)*0.5),floor(y))!=lake_col){
+                if (lakes_img.getPixel(floor(x-movex*0.5),floor(y))!=lake_col){
                     
-                    x-=cos(r)*0.75; 
+                    x-=movex*0.75; 
                 }else{
-                    x-=cos(r)*0.75;
-                    y-=sin(r)*0.75;
+                    x-=movex*0.75;
+                    y-=movey*0.75;
                 }
             }
         }
@@ -433,6 +508,8 @@ class PreyBasic : public Creature{
 };
 class PredBasic : public Creature{
     public:
+        bool cankill=true;
+        int wannakill=-1;
         PredBasic(){
             
         }
@@ -450,9 +527,10 @@ class PredBasic : public Creature{
             isnull = c;
             id=i;
         }
-    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded){
+    void tick(sf::Image lakes_img, sf::Color lake_col, double *grassArray, std::vector<int> &spotsNeeded, refGrid<gdst,lwidth> oppsort){
+        wannakill=-1;
         if (!isnull){
-            walk(lakes_img, lake_col);
+            walk(lakes_img, lake_col, oppsort);
             if (hunger <= 0){
                 isnull = true;
                 return;
@@ -461,32 +539,32 @@ class PredBasic : public Creature{
                 isnull = true;
                 return;
             }else if (age > 0.3){
-                matetimer -= 0.005 + (0.002*((double)random()/(double)RAND_MAX));
+                matetimer -= 0.006 + (0.002*((double)random()/(double)RAND_MAX));
             }
 
-            age+=0.004*((double)random()/(double)RAND_MAX);
+            age+=0.004*(1-hunger)*((double)random()/(double)RAND_MAX);
             hunger -= 0.01;
-            eat();
+            eat(oppsort);
             reproduce(spotsNeeded, lakes_img, lake_col);
         
         }
         
     }
-    void eat(){
+    void eat(refGrid<gdst,lwidth> oppsort){
         if (hunger <= 0.3 || iseating){
-            iseating = true;
-            if (hunger >= 0.9){
-                iseating = false;
-            }
-            int cx = floor(x);
-            int cy = floor(y);
-            if (grassArray[cy*lwidth+cx] > 0){
-                if (grassArray[cy*lwidth+cx]-0.1 >= 0){
-                    grassArray[cy*lwidth+cx]-=0.1;
+            iseating=true;
+            point<double> nearopp = oppsort.getNearestAround(toPoint());
+
+            if(nearopp.distance(toPoint()) < 1.2){
+                if (hunger+0.2 <= 1){
+                    hunger += 0.8;
                 }else{
-                    grassArray[cy*lwidth+cx] = 0;
+                    hunger = 1;
                 }
-                hunger += 0.2;
+                wannakill=nearopp.id;
+            }
+            if (hunger>=0.8){
+                iseating=false;
             }
         }
 
@@ -501,18 +579,25 @@ class PredBasic : public Creature{
             
         }
     }
-    void walk(sf::Image lakes_img, sf::Color lake_col){  
+    void walk(sf::Image lakes_img, sf::Color lake_col, refGrid<gdst,lwidth> oppsort){  
         if (!isnull){ // check that is exists
-            
-
+    
             //rotate random amount, in radions, "then walk" in that direction
             double temp_rand = (double)random()/(double)RAND_MAX;
             r = (2 * M_PI * temp_rand);
 
+            if (iseating){
+                point<double> nearopp = oppsort.getNearestAround(toPoint());
+                if (nearopp.id != -1){
+                    r = nearopp.direction(toPoint());
+                }
+            }   
 
-
-            x+=cos(r);
-            y+=sin(r);
+            double movex = cos(r);
+            double movey = sin(r);
+            
+            x+=movex;
+            y+=movey;
             
             if (x < 0){
                 x = 0;
@@ -529,15 +614,15 @@ class PredBasic : public Creature{
             
             if (lakes_img.getPixel(floor(x),floor(y))==lake_col){
                 
-                if (lakes_img.getPixel(floor(x),floor(y-sin(r)*0.8))!=lake_col){
-                    y-=sin(r)*0.5;
+                if (lakes_img.getPixel(floor(x),floor(y-movey*0.8))!=lake_col){
+                    y-=movey*0.5;
                 }else 
-                if (lakes_img.getPixel(floor(x-cos(r)*0.5),floor(y))!=lake_col){
+                if (lakes_img.getPixel(floor(x-movex*0.5),floor(y))!=lake_col){
                     
-                    x-=cos(r)*0.75; 
+                    x-=movex*0.75; 
                 }else{
-                    x-=cos(r)*0.75;
-                    y-=sin(r)*0.75;
+                    x-=movex*0.75;
+                    y-=movey*0.75;
                 }
             }
         }
@@ -610,8 +695,18 @@ int main(){
             
         }
     }
-    CreatureOrganizer<PreyBasic, CREATURE_MAX> preys = CreatureOrganizer<PreyBasic, CREATURE_MAX>(lakes_img, lake_col, CREATURE_START);
-    CreatureOrganizer<PredBasic, CREATURE_MAX> preds = CreatureOrganizer<PredBasic, CREATURE_MAX>(lakes_img, lake_col, CREATURE_START);
+    CreatureOrganizer<PreyBasic, CREATURE_MAX> preys = CreatureOrganizer<PreyBasic, CREATURE_MAX>
+                        (
+                            lakes_img, 
+                            lake_col, 
+                            CREATURE_START
+                        );
+    CreatureOrganizer<PredBasic, CREATURE_MAX> preds = CreatureOrganizer<PredBasic, CREATURE_MAX>
+                        (
+                            lakes_img, 
+                            lake_col, 
+                            CREATURE_START/2
+                        );
     // for (int i = 0; i < CREATURE_MAX; i++){
         
     //     int curx = lwidth * random()/RAND_MAX;
@@ -731,11 +826,17 @@ int main(){
         window.draw(lakes_spr);
         window.draw(grass_spr);
 
+        
+        for (int i = 0; i < preytokill.size(); i++){
+            preys[preytokill[i]].isnull=true;
+        }
+        
+        preytokill = std::vector<int>();
 
-        preys.tickThreaded(4);
-        preds.tickThreaded(4);
+
+        preys.tickThreaded(12, preds.gridsort);
+        preds.tickThreaded(12, preys.gridsort);
         window.draw(preys);
-
         window.draw(preds);
 
         
